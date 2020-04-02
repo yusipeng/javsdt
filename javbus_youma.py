@@ -1,24 +1,26 @@
 # -*- coding:utf-8 -*-
-import os, re
+import os
+import re
+from configparser import RawConfigParser
+from os import system
 from os.path import exists
 from re import findall
 from re import search
-from configparser import RawConfigParser
 from shutil import copyfile
 from traceback import format_exc
-########################################################################################################################
-from functions_preparation import JavFile, choose_directory, check_classify_root, exist_nfo, exist_extra_folders,\
-    record_start, record_fail, record_warn, record_video_old
-from functions_process import check_subt_divulge, replace_xml, replace_xml_win
+
+from functions_picture import add_watermark_divulge, crop_poster_youma
 from functions_picture import check_pic, add_watermark_subt
-from functions_requests import download_pic
+########################################################################################################################
+from functions_preparation import JavFile, choose_directory, check_classify_root, exist_nfo, exist_extra_folders, \
+    record_start, record_fail, record_warn, record_video_old
 ########################################################################################################################
 from functions_preparation import check_actors
+from functions_process import check_subt_divulge, replace_xml, replace_xml_win
 from functions_process import find_num_bus, collect_sculpture
+from functions_requests import download_pic
+from functions_requests import steal_arzon_cookies, find_plot_arzon, get_bus_html
 from functions_translate import tran_plot
-from functions_picture import add_watermark_divulge, crop_poster_youma
-from functions_requests import steal_arzon_cookies, get_arzon_html, find_plot_arzon, get_bus_html
-
 
 #  main开始
 print('1、避开21:00-1:00，访问javbus和arzon很慢。\n'
@@ -139,10 +141,10 @@ if bool_proxy and custom_proxy:
         proxies = {"http": "http://" + custom_proxy, "https": "https://" + custom_proxy}
     else:
         proxies = {"http": "socks5://" + custom_proxy, "https": "socks5://" + custom_proxy}
-    proxy_arzon = proxies if bool_arzon_proxy else {}    # 请求arzon时传递的参数
-    proxy_bus = proxies if bool_bus_proxy else {}    # 请求javbus时传递的参数
+    proxy_arzon = proxies if bool_arzon_proxy else {}  # 请求arzon时传递的参数
+    proxy_bus = proxies if bool_bus_proxy else {}  # 请求javbus时传递的参数
 else:
-    proxy_arzon = proxy_bus = {}   # 请求dmm图片时传递的参数
+    proxy_arzon = proxy_bus = {}  # 请求dmm图片时传递的参数
 # 初始化：如果需要日语简介，需要先获得arzon的cookie，通过成人验证
 acook = steal_arzon_cookies(proxy_arzon) if bool_plot and bool_nfo else {}
 # 初始化：jav网址，无论用户输不输人后面的斜杠 https://www.buscdn.work/
@@ -150,15 +152,15 @@ if not url_web.endswith('/'):
     url_web += '/'
 # 初始化：简/繁中文，影响影片特征和简介
 if bool_zh:
-    to_language = 'zh'          # 目标语言，百度翻译规定 zh是简体中文，cht是繁体中文
+    to_language = 'zh'  # 目标语言，百度翻译规定 zh是简体中文，cht是繁体中文
 else:
     to_language = 'cht'
 # 初始化：“是否重命名或创建独立文件夹”，还会受到“归类影片”影响。
-if bool_classify:                            # 如果需要归类
-    if bool_classify_folder:                 # 并且是针对文件夹
-        bool_rename_folder = True            # 那么必须重命名文件夹或者创建新的文件夹
+if bool_classify:  # 如果需要归类
+    if bool_classify_folder:  # 并且是针对文件夹
+        bool_rename_folder = True  # 那么必须重命名文件夹或者创建新的文件夹
     else:
-        bool_rename_folder = False           # 否则不会操作新文件夹
+        bool_rename_folder = False  # 否则不会操作新文件夹
 # 初始化 当前系统的路径分隔符 windows是“\”，linux和mac是“/”
 sep = os.sep
 # 初始化：存放影片信息，用于给用户自定义各种命名
@@ -169,20 +171,20 @@ dict_nfo = {'空格': ' ', '车牌': 'ABC-123', '标题': '有码标题', '完�
             '是否流出': '', '影片类型': custom_movie_type, '系列': '有码系列',
             '原文件名': 'ABC-123', '原文件夹名': 'ABC-123', }
 # 初始化：将ini读取的各种自定义string，切割为list。如果是dict_nfo没有的、用户自己需要的元素，将它们放进dict_nfo中。
-list_extra_genres = custom_genres.split('、') if custom_genres else [] # 需要的额外特征
+list_extra_genres = custom_genres.split('、') if custom_genres else []  # 需要的额外特征
 # 是否需要把系列、片商加到特征中，如果没有明确的系列、片商，也不会加
 bool_write_series = True if '系列' in list_extra_genres else False
 bool_write_studio = True if '片商' in list_extra_genres else False
 list_extra_genres = [i for i in list_extra_genres if i != '系列' and i != '片商']
-list_suren_num = custom_suren_pref.split('、')          # 素人番号的列表
-list_rename_video = custom_video.split('+')             # 重命名视频的格式
-list_rename_folder = custom_folder.split('+')           # 重命名文件夹的格式
-tuple_type = tuple(custom_file_type.split('、'))        # 需要扫描的文件的类型
+list_suren_num = custom_suren_pref.split('、')  # 素人番号的列表
+list_rename_video = custom_video.split('+')  # 重命名视频的格式
+list_rename_folder = custom_folder.split('+')  # 重命名文件夹的格式
+tuple_type = tuple(custom_file_type.split('、'))  # 需要扫描的文件的类型
 list_name_nfo_title = custom_nfo_title.replace('标题', '完整标题', 1).split('+')  # nfo中title的写法
-list_name_fanart = custom_fanart.split('+')            # fanart的格式
-list_name_poster = custom_poster.split('+')            # poster的格式
-list_subt_video = custom_subt_video.split('、')        # 包含哪些特殊含义的文字，判断是否中字
-list_divulge_video = custom_divulge_video.split('、')          # 包含哪些特殊含义的文字，判断是否是无码流出片
+list_name_fanart = custom_fanart.split('+')  # fanart的格式
+list_name_poster = custom_poster.split('+')  # poster的格式
+list_subt_video = custom_subt_video.split('、')  # 包含哪些特殊含义的文字，判断是否中字
+list_divulge_video = custom_divulge_video.split('、')  # 包含哪些特殊含义的文字，判断是否是无码流出片
 list_surplus_words = custom_surplus_words.split('、')  # 视频文件名包含哪些多余的字幕数字，需要无视
 # 七个for，如果有什么高效简介的办法，请告诉我
 for j in list_extra_genres:
@@ -195,7 +197,7 @@ for j in list_rename_folder:
     if j not in dict_nfo:
         dict_nfo[j] = j
 list_classify_basis = []
-for i in custom_classify_basis.split('\\'):   # 归类标准，归类到哪个文件夹。不管是什么操作系统，用户写归类的规则，用“\”连接
+for i in custom_classify_basis.split('\\'):  # 归类标准，归类到哪个文件夹。不管是什么操作系统，用户写归类的规则，用“\”连接
     for j in i.split('+'):
         if j not in dict_nfo:
             dict_nfo[j] = j
@@ -222,7 +224,8 @@ gen_dict = {'中文字幕': '中文字幕', '无码流出': '无码流出',
             '科幻': '科幻', '女優ベスト・総集編': '演员的总编', '温泉': '温泉', 'M男': 'M男', '原作コラボ': '原作协作',
             '16時間以上作品': '16时间以上作品', 'デカチン・巨根': '巨根', 'ファン感謝・訪問': '感恩祭', '動画': '动画', '巨尻': '巨尻', 'ハーレム': '后宫',
             '日焼け': '晒黑', '早漏': '早漏', 'キス・接吻': '接吻.', '汗だく': '汗流浃背', 'スマホ専用縦動画': '智能手机的垂直视频', 'Vシネマ': '电影放映',
-            'Don Cipote\'s choice': 'Don Cipote\'s choice', 'アニメ': '日本动漫', 'アクション': '动作', 'イメージビデオ（男性）': '（视频）男性', '孕ませ': '孕育', 'ボーイズラブ': '男孩恋爱',
+            'Don Cipote\'s choice': 'Don Cipote\'s choice', 'アニメ': '日本动漫', 'アクション': '动作', 'イメージビデオ（男性）': '（视频）男性',
+            '孕ませ': '孕育', 'ボーイズラブ': '男孩恋爱',
             'ビッチ': 'bitch', '特典あり（AVベースボール）': '特典（AV棒球）', 'コミック雑誌': '漫画雑志', '時間停止': '时间停止',
 
             '黑幫成員': '黑帮成员', '童年朋友': '童年朋友', '公主': '公主', '亞洲女演員': '亚洲女演员', '伴侶': '伴侣', '講師': '讲师',
@@ -245,7 +248,6 @@ gen_dict = {'中文字幕': '中文字幕', '无码流出': '无码流出',
             '變性者': '变性人', '無毛': '无毛', '胖女人': '胖女人', '苗條': '苗条', '孕婦': '孕妇', '成熟的女人': '成熟的女人',
             '蘿莉塔': '萝莉塔', '貧乳・微乳': '贫乳・微乳', '巨乳': '巨乳',
 
-
             '顏面騎乘': '颜面骑乘', '食糞': '食粪', '足交': '足交', '母乳': '母乳', '手指插入': '手指插入', '按摩': '按摩',
             '女上位': '女上位', '舔陰': '舔阴', '拳交': '拳交', '深喉': '深喉', '69': '69', '淫語': '淫语',
             '潮吹': '潮吹', '乳交': '乳交', '排便': '排便', '飲尿': '饮尿', '口交': '口交', '濫交': '滥交',
@@ -264,7 +266,8 @@ gen_dict = {'中文字幕': '中文字幕', '无码流出': '无码流出',
             '4小時以上作品': '4小时以上作品', '薄馬賽克': '薄马赛克', '經典': '经典', '首次亮相': '首次亮相', '數位馬賽克': '数位马赛克', '投稿': '投稿',
             '纪录片': '纪录片', '國外進口': '国外进口', '第一人稱攝影': '第一人称摄影', '業餘': '业余', '局部特寫': '局部特写', '獨立製作': '独立制作',
             'DMM獨家': 'DMM独家', '單體作品': '单体作品', '合集': '合集', '高清': 'xxx', '字幕': 'xxx', '天堂TV': '天堂TV',
-            'DVD多士爐': 'DVD多士炉', 'AV OPEN 2014 スーパーヘビー': 'AV OPEN 2014 S级', 'AV OPEN 2014 ヘビー級': 'AV OPEN 2014重量级', 'AV OPEN 2014 ミドル級': 'AV OPEN 2014中量级',
+            'DVD多士爐': 'DVD多士炉', 'AV OPEN 2014 スーパーヘビー': 'AV OPEN 2014 S级', 'AV OPEN 2014 ヘビー級': 'AV OPEN 2014重量级',
+            'AV OPEN 2014 ミドル級': 'AV OPEN 2014中量级',
             'AV OPEN 2015 マニア/フェチ部門': 'AV OPEN 2015 狂热者/恋物癖部门', 'AV OPEN 2015 熟女部門': 'AV OPEN 2015 熟女部门',
             'AV OPEN 2015 企画部門': 'AV OPEN 2015 企画部门', 'AV OPEN 2015 乙女部門': 'AV OPEN 2015 少女部',
             'AV OPEN 2015 素人部門': 'AV OPEN 2015 素人部门', 'AV OPEN 2015 SM/ハード部門': 'AV OPEN 2015 SM/硬件',
@@ -285,7 +288,7 @@ gen_dict = {'中文字幕': '中文字幕', '无码流出': '无码流出',
             '面接': '面试', 'お風呂': '浴室', '叔母さん': '叔母阿姨', '罵倒': '骂倒', 'お爺ちゃん': '爷爷', '逆レイプ': '强奸小姨子',
             'ディルド': 'ディルド', 'ヨガ': '瑜伽', '飲み会・合コン': '酒会、联谊会', '部活・マネージャー': '社团经理', 'お婆ちゃん': '外婆', 'ビジネススーツ': '商务套装',
             'チアガール': '啦啦队女孩', 'ママ友': '妈妈的朋友', 'エマニエル': '片商Emanieru熟女塾', '妄想族': '妄想族', '蝋燭': '蜡烛', '鼻フック': '鼻钩儿',
-            '放置': '放置', 'サンプル動画': '范例影片', 'サイコ・スリラー': '心理惊悚片', 'ラブコメ': '爱情喜剧', 'オタク': '御宅族',}
+            '放置': '放置', 'サンプル動画': '范例影片', 'サイコ・スリラー': '心理惊悚片', 'ラブコメ': '爱情喜剧', 'オタク': '御宅族', }
 
 # 用户输入“回车”就继续选择文件夹整理
 input_start_key = ''
@@ -314,16 +317,16 @@ while input_start_key == '':
             # print(root+'sep+files[-1])      整理要跳过已存在nfo的文件夹，判断这一层文件夹最后两个文件是不是nfo
             continue
         # 对这一层文件夹进行评估,有多少视频，有多少同车牌视频，是不是独立文件夹
-        list_jav_videos = []         # 存放：需要整理的jav的结构体
-        dict_car_pref = {}           # 存放：这一层文件夹下的几个车牌 abp avop snis。。。{'abp': 1, avop': 2} abp只有一集，avop有cd1、cd2
-        num_videos_include = 0       # 当前文件夹中视频的数量，可能有视频不是jav
-        dict_subt_files = {}         # 存放：jav的字幕文件 {'c:\a\abc_123.srt': 'abc-123'}
+        list_jav_videos = []  # 存放：需要整理的jav的结构体
+        dict_car_pref = {}  # 存放：这一层文件夹下的几个车牌 abp avop snis。。。{'abp': 1, avop': 2} abp只有一集，avop有cd1、cd2
+        num_videos_include = 0  # 当前文件夹中视频的数量，可能有视频不是jav
+        dict_subt_files = {}  # 存放：jav的字幕文件 {'c:\a\abc_123.srt': 'abc-123'}
         # 判断文件是不是字幕文件，放入dict_subt_files中
         for file_raw in files:
             file_temp = file_raw.upper()
             if file_temp.endswith(('.SRT', '.VTT', '.ASS', '.SSA', '.SUB', '.SMI',)):
                 if 'FC2' in file_temp:
-                    continue    # 【跳出2】
+                    continue  # 【跳出2】
                 for word in list_surplus_words:
                     file_temp = file_temp.replace(word, '')
                 # 字幕中的车牌
@@ -337,7 +340,7 @@ while input_start_key == '':
             if file_temp.endswith(tuple_type) and not file_temp.startswith('.'):
                 num_videos_include += 1
                 if 'FC2' in file_temp:
-                    continue    # 【跳出2】
+                    continue  # 【跳出2】
                 for word in list_surplus_words:
                     file_temp = file_temp.replace(word, '')
                 # jav_num 视频中的车牌
@@ -349,8 +352,8 @@ while input_start_key == '':
                         dict_car_pref[jav_num] = 1  # 这个新车牌有了第一集
                     # 把这个jav的各种属性打包好
                     jav_struct = JavFile()
-                    jav_struct.num = jav_num           # 车牌
-                    jav_struct.file = file_raw         # 原文件名
+                    jav_struct.num = jav_num  # 车牌
+                    jav_struct.file = file_raw  # 原文件名
                     jav_struct.episodes = dict_car_pref[jav_num]  # 当前jav，是第几集  {'abp': 1, avop': 2}
                     # 这个车牌在dict_subt_files中，有它的字幕。
                     if jav_num in dict_subt_files.values():
@@ -363,20 +366,20 @@ while input_start_key == '':
         if dict_car_pref:  # 这一层文件夹下有jav
             if len(dict_car_pref) > 1 or num_videos_include > len(list_jav_videos) or exist_extra_folders(dirs):
                 # 当前文件夹下，车牌不止一个；还有其他非jav视频；有其他文件夹，除了演员头像文件夹“.actors”和额外剧照文件夹“extrafanart”；
-                bool_separate_folder = False   # 不是独立的文件夹
+                bool_separate_folder = False  # 不是独立的文件夹
             else:
-                bool_separate_folder = True    # 这一层文件夹是这部jav的独立文件夹
+                bool_separate_folder = True  # 这一层文件夹是这部jav的独立文件夹
         else:
-            continue    # 【跳出1】
+            continue  # 【跳出1】
         # 正式开始
         # print(list_jav_videos)
         for jav in list_jav_videos:
             jav_raw_num = jav.num  # 车牌  abc-123
-            jav_file = jav.file    # 完整的原文件名  abc-123.mp4
+            jav_file = jav.file  # 完整的原文件名  abc-123.mp4
             jav_epi = jav.episodes  # 这是第几集？一般都只有一集
             num_all_episodes = dict_car_pref[jav_raw_num]  # 该车牌总共多少集
             path_jav = root + sep + jav_file  # jav的起始路径
-            path_relative = sep + path_jav.replace(root_choose, '')   # 影片的相对于所选文件夹的路径，用于报错
+            path_relative = sep + path_jav.replace(root_choose, '')  # 影片的相对于所选文件夹的路径，用于报错
             print('>>正在处理：', jav_file)
             print('    >发现车牌：', jav_raw_num)
             # 视频本身的一些属性
@@ -397,7 +400,7 @@ while input_start_key == '':
 
             try:
                 # 搜索获取nfo信息的javbus网页
-                if '公交车' not in jav_file:    # 用户没有指定网址，则去搜索
+                if '公交车' not in jav_file:  # 用户没有指定网址，则去搜索
                     url_search_web = url_web + 'search/' + jav_raw_num + '&type=1&parent=ce'
                     print('    >搜索javbus：', url_search_web)
                     # 得到javbus搜索网页html
@@ -409,7 +412,7 @@ while input_start_key == '':
                         # print('    >正在核查搜索结果...')
                         jav_pref = jav_raw_num.split('-')[0]  # 匹配车牌的前缀字母
                         jav_suf = jav_raw_num.split('-')[-1].lstrip('0')  # 当前车牌的后缀数字 去除多余的0
-                        list_fit_results = []    # 存放，车牌符合的结果
+                        list_fit_results = []  # 存放，车牌符合的结果
                         for i in list_search_results:
                             url_end = i.split('/')[-1].upper()
                             url_suf = search(r'[-_](\d+)', url_end).group(1).lstrip('0')  # 匹配box上影片url，车牌的后缀数字，去除多余的0
@@ -422,9 +425,14 @@ while input_start_key == '':
                             num_fail += 1
                             record_fail('    >第' + str(
                                 num_fail) + '个失败！javbus有码找不到该车牌的信息：' + jav_raw_num + '，' + path_relative + '\n')
-                            continue           # 【跳出对该jav的整理】
-                        # 默认用第一个搜索结果
+                            continue  # 【跳出对该jav的整理】
+                        # 默认用车牌全匹配结果否则使用第一个
                         url_on_web = list_fit_results[0]
+                        pattern = re.compile(jav_pref + '\S?' + jav_suf + '$')
+                        for i in list_fit_results:
+                            if re.search(pattern, i):
+                                url_on_web = i
+                                break
                         if len(list_fit_results) > 1:
                             num_fail += 1
                             record_fail('    >第' + str(
@@ -434,7 +442,7 @@ while input_start_key == '':
                         num_fail += 1
                         record_fail('    >第' + str(
                             num_fail) + '个失败！javbus有码找不到该车牌的信息：' + jav_raw_num + '，' + path_relative + '\n')
-                        continue           # 【跳出对该jav的整理】
+                        continue  # 【跳出对该jav的整理】
                 # 用户指定javbus上的网页
                 else:
                     url_appointg = search(r'公交车(.+?)\.', jav_file)
@@ -443,7 +451,7 @@ while input_start_key == '':
                     else:
                         num_fail += 1
                         record_fail('    >第' + str(num_fail) + '个失败！你指定的javbus网址有错误：' + path_relative + '\n')
-                        continue           # 【跳出对该jav的整理】
+                        continue  # 【跳出对该jav的整理】
                 # 经过上面的三种情况，可能找到了jav在bus上的网页链接url_on_web
                 print('    >获取信息：', url_on_web)
                 # 得到最终的jav所在网页
@@ -531,10 +539,11 @@ while input_start_key == '':
                     dict_nfo['标题'] = title_only
                 # 特点
                 genres = findall(r'genre"><a href=".+?">(.+?)</a></span>', html_web)
-                genres = [i for i in genres if i != '字幕' and i != '高清' and i != '高畫質' and i != '60fps' and i != '1080p']    # 这些特征 没有参考意义，为用户删去
+                genres = [i for i in genres if
+                          i != '字幕' and i != '高清' and i != '高畫質' and i != '60fps' and i != '1080p']  # 这些特征 没有参考意义，为用户删去
                 if bool_subt:  # 有“中字“，加上特征”中文字幕”
                     genres.append('中文字幕')
-                if bool_divulge:   # 是流出无码片，加上特征'无码流出'
+                if bool_divulge:  # 是流出无码片，加上特征'无码流出'
                     genres.append('无码流出')
                 # print(genres)
                 # arzon的简介 #########################################################
@@ -563,10 +572,10 @@ while input_start_key == '':
                 #######################################################################
                 # jav_name 是自始至终的 文件名（不带文件类型）  jav_file是自始至终的 文件名（完整带文件类型） root是原所在文件夹的路径  root_now 是现在（新）所在文件夹的路径
                 # path_jav 是现在视频路径   path_subt是现在字幕路径   subt_file是 自始至终的 字幕文件名（带文件类型）  jav_folder是自始至终的 所在文件夹名（不是路径）
-                dict_nfo['视频'] = dict_nfo['原文件名'] = jav_name    # dict_nfo['视频']， 先定义为原文件名，【即将变化】
-                jav_folder = dict_nfo['原文件夹名'] = root.split(sep)[-1]    # 当前影片的文件夹名称，【即将变化】
+                dict_nfo['视频'] = dict_nfo['原文件名'] = jav_name  # dict_nfo['视频']， 先定义为原文件名，【即将变化】
+                jav_folder = dict_nfo['原文件夹名'] = root.split(sep)[-1]  # 当前影片的文件夹名称，【即将变化】
                 path_subt = root + sep + subt_file  # 当前字幕的路径，【即将变化】
-                root_now = root    # 当前影片的文件夹路径，【即将变化】
+                root_now = root  # 当前影片的文件夹路径，【即将变化】
                 # 是CD1还是CDn？
                 if num_all_episodes > 1:
                     str_cd = '-cd' + str(jav_epi)
@@ -579,22 +588,22 @@ while input_start_key == '':
                     jav_name = ''
                     for j in list_rename_video:
                         jav_name += dict_nfo[j]
-                    jav_name = jav_name.rstrip() + str_cd          # 【发生变化】jav_name  去除末尾空格，否则windows会自动删除空格，导致程序仍以为带空格
+                    jav_name = jav_name.rstrip() + str_cd  # 【发生变化】jav_name  去除末尾空格，否则windows会自动删除空格，导致程序仍以为带空格
                     # 新的完整文件名，新的路径
-                    dict_nfo['视频'] = jav_name                   # 【发生变化】 dict_nfo['视频']
-                    jav_file = jav_name + video_type              # 【发生变化】jav_file，下面可能重命名视频不成功，但仍然围绕成功的jav_file来命名
-                    path_jav_new = root_now + sep + jav_file      # 【临时变量】path_jav_new 新路径
+                    dict_nfo['视频'] = jav_name  # 【发生变化】 dict_nfo['视频']
+                    jav_file = jav_name + video_type  # 【发生变化】jav_file，下面可能重命名视频不成功，但仍然围绕成功的jav_file来命名
+                    path_jav_new = root_now + sep + jav_file  # 【临时变量】path_jav_new 新路径
                     # 理想状态下，还不存在目标同名文件
                     if not exists(path_jav_new):
                         # 重命名视频
                         os.rename(path_jav, path_jav_new)
-                        path_jav = path_jav_new                  # 【发生变化】 path_jav
+                        path_jav = path_jav_new  # 【发生变化】 path_jav
                         record_video_old(jav_file, jav.file)
                     # 已存在目标文件，但就是现在的文件
                     elif path_jav.upper() == path_jav_new.upper():
                         try:
                             os.rename(path_jav, path_jav_new)
-                            path_jav = path_jav_new              # 【发生变化】 path_jav
+                            path_jav = path_jav_new  # 【发生变化】 path_jav
                         except:  # windows本地磁盘，“abc-123.mp4”重命名为“abc-123.mp4”或“ABC-123.mp4”没问题，但有用户反映，挂载的磁盘会报错“file exists error”
                             num_fail += 1
                             record_fail('    >第' + str(num_fail) + '个失败！请自行重命名大小写：' + path_relative + '\n')
@@ -607,12 +616,12 @@ while input_start_key == '':
                     print('    >修改文件名' + str_cd + '完成')
                     # 重命名字幕
                     if subt_file and bool_rename_subt:
-                        subt_file_new = jav_name + subt_type     # 【临时变量】subt_file_new
-                        path_subt_new = root_now + sep + subt_file_new    # 【临时变量】path_subt_new
+                        subt_file_new = jav_name + subt_type  # 【临时变量】subt_file_new
+                        path_subt_new = root_now + sep + subt_file_new  # 【临时变量】path_subt_new
                         if path_subt != path_subt_new:
                             os.rename(path_subt, path_subt_new)
-                            subt_file = subt_file_new           # 【发生变化】 subt_file
-                            path_subt = path_subt_new           # 【发生变化】 path_subt
+                            subt_file = subt_file_new  # 【发生变化】 subt_file
+                            path_subt = path_subt_new  # 【发生变化】 path_subt
                         print('    >修改字幕名完成')
 
                 # 2 归类影片【和其他整理模式没区别】只针对视频文件和字幕文件。注意：第2操作和（下面第3操作或者下面第7操作）互斥，只能执行一个，归类影片是针对“文件”还是“文件夹”。
@@ -620,15 +629,15 @@ while input_start_key == '':
                     # 构造 移动的目标文件夹
                     root_dest = root_classify + sep
                     for j in list_classify_basis:
-                        root_dest += dict_nfo[j].rstrip()      # 【临时变量】归类的目标文件夹路径    C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\
+                        root_dest += dict_nfo[j].rstrip()  # 【临时变量】归类的目标文件夹路径    C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\
                     if not exists(root_dest):
                         os.makedirs(root_dest)
                     path_jav_new = root_dest + sep + jav_file  # 【临时变量】新的影片路径
                     # 目标文件夹没有相同的影片，防止用户已经有一个“avop-127.mp4”，现在又来一个
                     if not exists(path_jav_new):
                         os.rename(path_jav, path_jav_new)
-                        root_now = root_dest                   # 【发生变化】root_now   C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\
-                        path_jav = path_jav_new                # 【发生变化】path_jav   C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\avop-127.mp4
+                        root_now = root_dest  # 【发生变化】root_now   C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\
+                        path_jav = path_jav_new  # 【发生变化】path_jav   C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\avop-127.mp4
                         print('    >归类视频文件完成')
                         # 移动字幕
                         if subt_file:
@@ -639,8 +648,9 @@ while input_start_key == '':
                             print('    >归类字幕文件完成')
                     else:
                         num_fail += 1
-                        record_fail('    >第' + str(num_fail) + '个失败！归类失败，重复的影片，归类的目标文件夹已经存在相同的影片：' + path_jav_new + '\n')
-                        continue   # 【退出对该jav的整理】
+                        record_fail(
+                            '    >第' + str(num_fail) + '个失败！归类失败，重复的影片，归类的目标文件夹已经存在相同的影片：' + path_jav_new + '\n')
+                        continue  # 【退出对该jav的整理】
 
                 # 3重命名文件夹【和其他整理模式没区别】如果是针对“文件”归类，这一步会被跳过。 用户只需要归类视频文件，不需要管文件夹。
                 if bool_rename_folder:
@@ -648,21 +658,23 @@ while input_start_key == '':
                     jav_folder_new = ''
                     for j in list_rename_folder:
                         jav_folder_new += (dict_nfo[j])
-                    jav_folder_new = jav_folder_new.rstrip(' .')  # 【临时变量】新的所在文件夹。去除末尾空格和“.”，否则windows会自动删除它们，导致程序仍以为带空格和“.”
+                    jav_folder_new = jav_folder_new.rstrip(
+                        ' .')  # 【临时变量】新的所在文件夹。去除末尾空格和“.”，否则windows会自动删除它们，导致程序仍以为带空格和“.”
                     # 是独立文件夹，才会重命名文件夹
                     if bool_separate_folder:
                         if jav_epi == num_all_episodes:
                             # 同一车牌有n部，且这就是第n集，才会被重命名
                             list_root_now = root_now.split(sep)
                             del list_root_now[-1]
-                            root_new = sep.join(list_root_now) + sep + jav_folder_new        # 【临时变量】新的影片路径。上级文件夹路径+新文件夹名称=新文件夹路径
+                            root_new = sep.join(
+                                list_root_now) + sep + jav_folder_new  # 【临时变量】新的影片路径。上级文件夹路径+新文件夹名称=新文件夹路径
                             # 想要重命名的目标影片文件夹不存在
                             if not exists(root_new):
                                 # 修改文件夹
                                 os.rename(root_now, root_new)
-                                root_now = root_new                                         # 【发生变化】root_now
-                                path_jav = root_now + sep + jav_file                        # 【发生变化】path_jav
-                                jav_folder = jav_folder_new                                 # 【发生变化】jav_folder
+                                root_now = root_new  # 【发生变化】root_now
+                                path_jav = root_now + sep + jav_file  # 【发生变化】path_jav
+                                jav_folder = jav_folder_new  # 【发生变化】jav_folder
                             # 目标影片文件夹存在，但就是现在的文件夹，即新旧相同
                             elif root_now == root_new:
                                 pass
@@ -670,21 +682,21 @@ while input_start_key == '':
                             else:
                                 num_fail += 1
                                 record_fail('    >第' + str(num_fail) + '个失败！重命名文件夹失败，已存在相同文件夹：' + root_new + '\n')
-                                continue    # 【退出对该jav的整理】
+                                continue  # 【退出对该jav的整理】
                             print('    >重命名文件夹完成')
                     # 不是独立的文件夹，建立独立的文件夹
                     else:
-                        root_separate_folder = root_now + sep + jav_folder_new   # 【临时变量】新的影片所在文件夹。 当前文件夹的上级文件夹路径+新文件夹=新独立的文件夹的路径
+                        root_separate_folder = root_now + sep + jav_folder_new  # 【临时变量】新的影片所在文件夹。 当前文件夹的上级文件夹路径+新文件夹=新独立的文件夹的路径
                         # 确认没有同名文件夹
                         if not exists(root_separate_folder):
                             os.makedirs(root_separate_folder)
-                        path_jav_new = root_separate_folder + sep + jav_file    # 【临时变量】新的影片路径。
+                        path_jav_new = root_separate_folder + sep + jav_file  # 【临时变量】新的影片路径。
                         # 如果这个文件夹是现成的，在它内部确认有没有“avop-127.mp4”。
                         if not exists(path_jav_new):
                             os.rename(path_jav, path_jav_new)
                             root_now = root_separate_folder  # 【发生变化】root_now
-                            path_jav = path_jav_new          # 【发生变化】path_jav
-                            jav_folder = jav_folder_new      # 【发生变化】jav_folder
+                            path_jav = path_jav_new  # 【发生变化】path_jav
+                            jav_folder = jav_folder_new  # 【发生变化】jav_folder
                             # 移动字幕
                             if subt_file:
                                 os.rename(path_subt, root_separate_folder + sep + subt_file)
@@ -707,26 +719,28 @@ while input_start_key == '':
                         path_nfo = root_now + sep + jav_name + '.nfo'
                     title_in_nfo = ''
                     for i in list_name_nfo_title:
-                        title_in_nfo += dict_nfo[i]    # nfo中tilte的写法
+                        title_in_nfo += dict_nfo[i]  # nfo中tilte的写法
                     # 开始写入nfo，这nfo格式是参考的kodi的nfo
                     f = open(path_nfo, 'w', encoding="utf-8")
                     f.write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\" ?>\n"
                             "<movie>\n"
                             "  <plot>" + plot + "</plot>\n"
-                            "  <title>" + title_in_nfo + "</title>\n"
-                            "  <director>" + dict_nfo['导演'] + "</director>\n"
-                            "  <year>" + dict_nfo['发行年份'] + "</year>\n"
-                            "  <mpaa>NC-17</mpaa>\n"                            
-                            "  <customrating>NC-17</customrating>\n"
-                            "  <countrycode>JP</countrycode>\n"
-                            "  <premiered>" + time_premiered + "</premiered>\n"
-                            "  <release>" + time_premiered + "</release>\n"
-                            "  <runtime>" + dict_nfo['片长'] + "</runtime>\n"
-                            "  <country>日本</country>\n"
-                            "  <studio>" + studio + "</studio>\n"
-                            "  <id>" + jav_num + "</id>\n"
-                            "  <num>" + jav_num + "</num>\n"
-                            "  <set>" + series + "</set>\n")  # emby不管set系列，kodi可以
+                                                "  <title>" + title_in_nfo + "</title>\n"
+                                                                             "  <director>" + dict_nfo[
+                                '导演'] + "</director>\n"
+                                        "  <year>" + dict_nfo['发行年份'] + "</year>\n"
+                                                                        "  <mpaa>NC-17</mpaa>\n"
+                                                                        "  <customrating>NC-17</customrating>\n"
+                                                                        "  <countrycode>JP</countrycode>\n"
+                                                                        "  <premiered>" + time_premiered + "</premiered>\n"
+                                                                                                           "  <release>" + time_premiered + "</release>\n"
+                                                                                                                                            "  <runtime>" +
+                            dict_nfo['片长'] + "</runtime>\n"
+                                             "  <country>日本</country>\n"
+                                             "  <studio>" + studio + "</studio>\n"
+                                                                     "  <id>" + jav_num + "</id>\n"
+                                                                                          "  <num>" + jav_num + "</num>\n"
+                                                                                                                "  <set>" + series + "</set>\n")  # emby不管set系列，kodi可以
                     # 需要将特征写入genre
                     if bool_genre:
                         if bool_write_series and series:
@@ -803,7 +817,7 @@ while input_start_key == '':
                             num_fail += 1
                             record_fail('    >第' + str(
                                 num_fail) + '个失败！下载fanart.jpg失败：' + url_cover + '，' + path_relative + '\n')
-                            continue     # 退出对该jav的整理
+                            continue  # 退出对该jav的整理
                     # 裁剪生成 poster
                     if check_pic(path_poster):
                         # print('    >已有poster.jpg')
@@ -824,17 +838,18 @@ while input_start_key == '':
                         collect_sculpture(actors, root_now)
 
                 # 7归类影片，针对文件夹
-                if bool_classify and bool_classify_folder and jav_epi == num_all_episodes:    # 需要移动文件夹，且，是该影片的最后一集
+                if bool_classify and bool_classify_folder and jav_epi == num_all_episodes:  # 需要移动文件夹，且，是该影片的最后一集
                     # 用户选择的文件夹是一部影片的独立文件夹，为了避免在这个文件夹里又生成 归类的文件夹
                     if bool_separate_folder and root_classify.startswith(root):
                         print('    >无法归类，请选择该文件夹的上级文件夹作它的归类根目录')
-                        continue   # 【退出对该jav的整理】
+                        continue  # 【退出对该jav的整理】
                     # 目标文件夹，暂时是现在的位置
                     root_dest = root_classify + sep
                     # 移动的目标文件夹
                     for j in list_classify_basis:
-                        root_dest += dict_nfo[j].rstrip(' .')      # 【临时变量】 文件夹移动的目标上级文件夹  C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\
-                    root_now_new = root_dest + jav_folder          # 【临时变量】 文件夹移动的目标路径   C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\【葵司】AVOP-127\
+                        root_dest += dict_nfo[j].rstrip(
+                            ' .')  # 【临时变量】 文件夹移动的目标上级文件夹  C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\
+                    root_now_new = root_dest + jav_folder  # 【临时变量】 文件夹移动的目标路径   C:\Users\JuneRain\Desktop\测试文件夹\1\葵司\【葵司】AVOP-127\
                     # print(root_now_new)
                     if not exists(root_now_new):
                         os.makedirs(root_now_new)
@@ -848,12 +863,13 @@ while input_start_key == '':
                     else:  # 用户已经有了这个车牌的文件夹
                         num_fail += 1
                         record_fail('    >第' + str(num_fail) + '个失败！归类失败，重复的影片，归类的目标文件夹已存在相同文件夹：' + root_now_new + '\n')
-                        continue   # 【退出对该jav的整理】
+                        continue  # 【退出对该jav的整理】
 
             except:
                 num_fail += 1
-                record_fail('    >第' + str(num_fail) + '个失败！发生错误，如一直在该影片报错请截图并联系作者：' + path_relative + '\n' + format_exc() + '\n')
-                continue   # 【退出对该jav的整理】
+                record_fail('    >第' + str(
+                    num_fail) + '个失败！发生错误，如一直在该影片报错请截图并联系作者：' + path_relative + '\n' + format_exc() + '\n')
+                continue  # 【退出对该jav的整理】
 
     # 完结撒花
     print('\n当前文件夹完成，', end='')
@@ -866,7 +882,7 @@ while input_start_key == '':
             if content[line].startswith('已'):
                 break
             line -= 1
-        for i in range(line+1, 0):
+        for i in range(line + 1, 0):
             print(content[i], end='')
         print('\n“【记得清理它】失败记录.txt”已记录错误\n')
     else:
